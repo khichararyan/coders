@@ -7,6 +7,7 @@ database persistence with SQLite, and Fermat-Weber geospatial optimization.
 
 import http.server
 import socketserver
+import socket
 import json
 import math
 import os
@@ -1509,11 +1510,28 @@ class GridpointHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404)
 
 
+class DualStackServer(http.server.ThreadingHTTPServer):
+    """Threading HTTP server with dual-stack IPv6 & IPv4 support."""
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
+
 def run_server(port=PORT):
     # Ensure database tables exist
     db.init_db()
-    with http.server.ThreadingHTTPServer(("", port), GridpointHandler) as httpd:
-        print(f"[GRIDPOINT] Server listening on http://localhost:{port}")
+    server_class = DualStackServer
+    try:
+        server_class.address_family = socket.AF_INET6
+        httpd = server_class(("::", port), GridpointHandler)
+    except Exception:
+        server_class.address_family = socket.AF_INET
+        httpd = server_class(("", port), GridpointHandler)
+
+    with httpd:
+        print(f"[GRIDPOINT] Server listening on http://localhost:{port} and http://127.0.0.1:{port}")
         httpd.serve_forever()
 
 if __name__ == "__main__":

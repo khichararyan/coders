@@ -24,13 +24,37 @@ def haversine(lat1, lon1, lat2, lon2):
 
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gridpoint.db")
 
+class ManagedConnection:
+    """Wrapper that guarantees SQLite connection closure and transaction safety on exit."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+        finally:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
 def get_connection():
-    """Get SQLite database connection with row factory and foreign keys enabled."""
-    conn = sqlite3.connect(DB_FILE)
+    """Get SQLite database connection with row factory, WAL mode, busy timeout, and auto-cleanup."""
+    conn = sqlite3.connect(DB_FILE, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA journal_mode = WAL;")
-    return conn
+    return ManagedConnection(conn)
 
 def init_db():
     """Initialize all database tables with strict relational integrity."""

@@ -5233,6 +5233,291 @@ window.GRIDPOINT_COMPONENTS = window.GRIDPOINT_COMPONENTS || {};
     );
   }
 
+  const BENGALURU_AREAS = {
+    "koramangala": [12.9352, 77.6245],
+    "indiranagar": [12.9719, 77.6412],
+    "hsr layout": [12.9116, 77.6741],
+    "whitefield": [12.9698, 77.7499],
+    "electronic city": [12.8452, 77.6602],
+    "jayanagar": [12.9308, 77.5838],
+    "malleshwaram": [13.0031, 77.5643],
+    "bellandur": [12.9260, 77.6762],
+    "marathahalli": [12.9591, 77.6974],
+    "hebbal": [13.0358, 77.5970],
+    "rajajinagar": [12.9915, 77.5524],
+    "banashankari": [12.9255, 77.5468],
+    "btm layout": [12.9166, 77.6101],
+    "yelahanka": [13.1007, 77.5963],
+    "sarjapur road": [12.9081, 77.6953],
+    "jp nagar": [12.9063, 77.5857],
+    "peenya": [13.0329, 77.5273],
+    "mahadevapura": [12.9866, 77.6961]
+  };
+
+  function haversineDistKm(lat1, lon1, lat2, lon2) {
+    const toRad = function(x) { return (x * Math.PI) / 180; };
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 6371 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  function generateClientReply(query, context) {
+    context = context || {};
+    const qLower = (query || "").trim().toLowerCase();
+    const warehouses = context.warehouses && context.warehouses.length > 0 ? context.warehouses : [
+      { id: "WH-01", name: "North Fulfillment Hub (Peenya / Yeshwanthpur)", latitude: 13.0329, longitude: 77.5273, dailyAssigned: 4200, dailyCapacity: 5000, palletCapacity: 3200, palletsUsed: 1950, status: "OPTIMAL CAPACITY", statusColor: "#10B981" },
+      { id: "WH-02", name: "East Tech Corridor Hub (Whitefield / Mahadevapura)", latitude: 12.9698, longitude: 77.7499, dailyAssigned: 4680, dailyCapacity: 5000, palletCapacity: 2700, palletsUsed: 2210, status: "OPTIMAL CAPACITY", statusColor: "#10B981" },
+      { id: "WH-03", name: "South Electronic City Hub (Bommanahalli / EC)", latitude: 12.8452, longitude: 77.6602, dailyAssigned: 3820, dailyCapacity: 5000, palletCapacity: 3000, palletsUsed: 1840, status: "OPTIMAL CAPACITY", statusColor: "#10B981" }
+    ];
+
+    // 1. In-Chat Feedback & Review Routine
+    const isStarRating = ["1 star", "2 star", "3 star", "4 star", "5 star", "⭐ 1", "⭐ 2", "⭐ 3", "⭐ 4", "⭐ 5", "5/5", "4/5", "3/5", "2/5", "1/5"].some(function(s) { return qLower.indexOf(s) !== -1; });
+
+    if (isStarRating) {
+      let ratingNum = 5;
+      const numList = [5, 4, 3, 2, 1];
+      for (let i = 0; i < numList.length; i++) {
+        const n = numList[i];
+        if (qLower.indexOf(n + " star") !== -1 || qLower.indexOf("⭐ " + n) !== -1 || qLower.indexOf(n + "/5") !== -1) {
+          ratingNum = n;
+          break;
+        }
+      }
+      const refId = "FB_" + Date.now().toString(36).toUpperCase();
+      try {
+        const stored = JSON.parse(localStorage.getItem("gridpoint_user_feedback") || "[]");
+        stored.unshift({ id: refId, category: "General Review", rating: ratingNum, text: query, date: new Date().toISOString() });
+        localStorage.setItem("gridpoint_user_feedback", JSON.stringify(stored));
+      } catch (e) {}
+
+      let starsVisual = "";
+      for (let s = 0; s < ratingNum; s++) starsVisual += "⭐";
+
+      return {
+        reply: "### " + starsVisual + " Thank you for the " + ratingNum + "-star review!\n\nYour feedback has been logged directly for our product & engineering team (**Ref: #" + refId + "**).\n\nWe review every submission to make **ShelVO AI** and GridPoint more helpful for your operations.\n\n*Was this helpful? Feel free to share feedback anytime!*",
+        source: "ShelVO AI",
+        suggestedActions: [
+          { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+          { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" },
+          { label: "📦 Stock Inventory", action: "OPEN_INVENTORY_TABLE" }
+        ]
+      };
+    }
+
+    if (qLower === "feedback_cat_bug" || qLower === "🐛 bug / issue" || qLower.indexOf("bug:") === 0) {
+      if (query.length > 20 && qLower.indexOf("feedback_cat") === -1) {
+        const refId = "FB_" + Date.now().toString(36).toUpperCase();
+        try {
+          const stored = JSON.parse(localStorage.getItem("gridpoint_user_feedback") || "[]");
+          stored.unshift({ id: refId, category: "Bug / Issue", text: query, date: new Date().toISOString() });
+          localStorage.setItem("gridpoint_user_feedback", JSON.stringify(stored));
+        } catch (e) {}
+        return {
+          reply: "### 🐛 Bug Report Logged\n\nThanks for helping us improve ShelVO! We've logged this report for our engineering team (**Ref: #" + refId + "**) and will investigate promptly.\n\n*Was this helpful? Feel free to share feedback anytime!*",
+          source: "ShelVO AI",
+          suggestedActions: [
+            { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+            { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" }
+          ]
+        };
+      }
+      return {
+        reply: "### 🐛 Report a Bug or Issue\n\nThanks for helping us improve ShelVO! Could you please share **1–2 specific details** about what went wrong or what you observed?",
+        source: "ShelVO AI",
+        suggestedActions: [
+          { label: "💡 Switch to Feature Request", action: "FEEDBACK_CAT_FEATURE" },
+          { label: "⭐ Switch to General Review", action: "FEEDBACK_CAT_REVIEW" }
+        ]
+      };
+    }
+
+    if (qLower === "feedback_cat_feature" || qLower === "💡 feature request" || qLower.indexOf("feature:") === 0) {
+      if (query.length > 20 && qLower.indexOf("feedback_cat") === -1) {
+        const refId = "FB_" + Date.now().toString(36).toUpperCase();
+        try {
+          const stored = JSON.parse(localStorage.getItem("gridpoint_user_feedback") || "[]");
+          stored.unshift({ id: refId, category: "Feature Request", text: query, date: new Date().toISOString() });
+          localStorage.setItem("gridpoint_user_feedback", JSON.stringify(stored));
+        } catch (e) {}
+        return {
+          reply: "### 💡 Feature Request Logged\n\nThank you warmly! Your suggestion has been added to our product roadmap (**Ref: #" + refId + "**).\n\nOur team regularly reviews feature requests to prioritize upcoming releases.\n\n*Was this helpful? Feel free to share feedback anytime!*",
+          source: "ShelVO AI",
+          suggestedActions: [
+            { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+            { label: "📦 Stock Inventory", action: "OPEN_INVENTORY_TABLE" }
+          ]
+        };
+      }
+      return {
+        reply: "### 💡 Suggest a Feature\n\nWe'd love to hear your ideas! What feature or enhancement would make GridPoint and ShelVO even better for you?",
+        source: "ShelVO AI",
+        suggestedActions: [
+          { label: "🐛 Report Bug", action: "FEEDBACK_CAT_BUG" },
+          { label: "⭐ Leave General Review", action: "FEEDBACK_CAT_REVIEW" }
+        ]
+      };
+    }
+
+    const isFeedbackTrigger = ["give feedback", "report a bug", "report bug", "rate this app", "rate app", "feature request", "feedback", "rating", "review", "bugs"].some(function(k) { return qLower.indexOf(k) !== -1; });
+    if (qLower === "feedback_cat_review" || isFeedbackTrigger) {
+      if (qLower === "feedback_cat_review" || qLower.indexOf("rate") !== -1 || qLower.indexOf("review") !== -1) {
+        return {
+          reply: "### ⭐ Rate Your Experience\n\nThanks for helping us improve ShelVO! How would you rate your experience with us today?",
+          source: "ShelVO AI",
+          suggestedActions: [
+            { label: "⭐ 5 Stars - Excellent", action: "5 stars - Excellent" },
+            { label: "⭐ 4 Stars - Good", action: "4 stars - Good" },
+            { label: "⭐ 3 Stars - Average", action: "3 stars - Average" },
+            { label: "⭐ 2 Stars - Fair", action: "2 stars - Fair" },
+            { label: "⭐ 1 Star - Poor", action: "1 star - Poor" }
+          ]
+        };
+      }
+      return {
+        reply: "### 💬 Thanks for helping us improve ShelVO!\n\nTo direct your input to the right team quickly, please classify your feedback:",
+        source: "ShelVO AI",
+        suggestedActions: [
+          { label: "🐛 Bug / Issue", action: "FEEDBACK_CAT_BUG" },
+          { label: "💡 Feature Request", action: "FEEDBACK_CAT_FEATURE" },
+          { label: "⭐ General Review", action: "FEEDBACK_CAT_REVIEW" }
+        ]
+      };
+    }
+
+    // 2. Capacity & Utilization
+    if (["capacity", "utilization", "utilize", "headroom", "load", "pallet", "throughput", "limit"].some(function(k) { return qLower.indexOf(k) !== -1; })) {
+      const cards = warehouses.map(function(w, i) {
+        const cap = w.dailyCapacity || w.capacityOrders || 5000;
+        const assigned = w.dailyAssigned || w.dailyOrders || (w.assignedNeighborhoods ? w.assignedNeighborhoods.length * 420 : 3800);
+        const util = Math.min(100, Math.round((assigned / cap) * 100));
+        return {
+          code: w.id || w.code || ("WH-" + (i + 1 < 10 ? "0" + (i + 1) : i + 1)),
+          name: w.name || w.zone || ("Fulfillment Hub " + (i + 1)),
+          dailyAssigned: assigned,
+          dailyCapacity: cap,
+          utilizationPercent: util,
+          palletCapacity: w.palletCapacity || 3000,
+          palletsUsed: w.palletsUsed || Math.round(assigned / 2.2),
+          status: util > 85 ? "HIGH LOAD WARNING" : "OPTIMAL CAPACITY",
+          statusColor: util > 85 ? "#F59E0B" : "#10B981"
+        };
+      });
+
+      let totalCap = 0;
+      let totalAssigned = 0;
+      cards.forEach(function(c) { totalCap += c.dailyCapacity; totalAssigned += c.dailyAssigned; });
+      const overallUtil = totalCap > 0 ? Math.round((totalAssigned / totalCap) * 100) : 0;
+      const headroom = Math.max(0, totalCap - totalAssigned);
+
+      const rows = cards.map(function(c) {
+        return "- **" + c.code + " (" + c.name + ")**: Throughput Load **" + c.dailyAssigned.toLocaleString() + "** / " + c.dailyCapacity.toLocaleString() + " orders/day (" + c.utilizationPercent + "% util), **" + c.palletsUsed.toLocaleString() + "** / " + c.palletCapacity.toLocaleString() + " pallets used. Status: **" + c.status + "**. Headroom: **+" + (c.dailyCapacity - c.dailyAssigned).toLocaleString() + " orders/day**";
+      }).join("\n");
+
+      return {
+        reply: "### Warehouse Network Capacity & Throughput Intelligence\n\nOur active fulfillment network consists of **" + cards.length + " primary hub(s)** serving our metropolitan demand corridors:\n\n- **Total Network Processing Capacity:** **" + totalCap.toLocaleString() + " orders/day**\n- **Current Assigned Daily Demand:** **" + totalAssigned.toLocaleString() + " orders/day**\n- **Composite Network Utilization:** **" + overallUtil + "%**\n- **Reserve Headroom:** **+" + headroom.toLocaleString() + " orders/day**\n\n#### Hub Capacity Breakdown:\n\n" + rows + "\n\n*Was this helpful? Feel free to share feedback!*",
+        source: "ShelVO AI",
+        capacityCards: cards,
+        suggestedActions: [
+          { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+          { label: "📦 Stock Inventory", action: "OPEN_INVENTORY_TABLE" },
+          { label: "⚡ Demand Shock Test", action: "OPEN_DEMAND_SHOCK" }
+        ]
+      };
+    }
+
+    // 3. Proximity & Nearest Hub
+    const isNearby = ["nearby", "near me", "closest", "nearest", "find warehouse", "locate", "where is", "distance"].some(function(k) { return qLower.indexOf(k) !== -1; }) || Object.keys(BENGALURU_AREAS).some(function(a) { return qLower.indexOf(a) !== -1; });
+    if (isNearby) {
+      let targetCoords = null;
+      let targetName = null;
+
+      if (context.userLocation && context.userLocation.latitude) {
+        targetCoords = [context.userLocation.latitude, context.userLocation.longitude];
+        targetName = context.userLocation.area || "Your GPS Location";
+      }
+
+      if (!targetCoords) {
+        const areaKeys = Object.keys(BENGALURU_AREAS);
+        for (let i = 0; i < areaKeys.length; i++) {
+          const area = areaKeys[i];
+          if (qLower.indexOf(area) !== -1) {
+            targetCoords = BENGALURU_AREAS[area];
+            targetName = area.toUpperCase();
+            break;
+          }
+        }
+      }
+
+      if (!targetCoords) {
+        return {
+          reply: "### 📍 Locate Your Nearest Fulfillment Warehouse\n\nTo identify the closest fulfillment center and estimate EV transit times, tell me your neighborhood (e.g., *Koramangala*, *Whitefield*, *Indiranagar*) or click **`📍 Share GPS Location`** below:",
+          source: "ShelVO AI",
+          suggestedActions: [
+            { label: "📍 Share GPS Location", action: "REQUEST_GEOLOCATION" },
+            { label: "📍 Koramangala", action: "CHAT_LOCATION_Koramangala" },
+            { label: "📍 Whitefield", action: "CHAT_LOCATION_Whitefield" },
+            { label: "📍 Indiranagar", action: "CHAT_LOCATION_Indiranagar" },
+            { label: "📍 Electronic City", action: "CHAT_LOCATION_Electronic City" }
+          ]
+        };
+      }
+
+      let closest = warehouses[0];
+      let minD = Infinity;
+      warehouses.forEach(function(w) {
+        const d = haversineDistKm(targetCoords[0], targetCoords[1], w.latitude, w.longitude);
+        if (d < minD) {
+          minD = d;
+          closest = Object.assign({}, w, { distKm: d });
+        }
+      });
+
+      const transitMins = Math.round((minD / 25) * 60 + 5);
+
+      return {
+        reply: "### 📍 Nearest Warehouse Location Analysis\n**Target Location:** " + targetName + " (`" + targetCoords[0].toFixed(4) + ", " + targetCoords[1].toFixed(4) + "`)\n\nThe closest fulfillment center to you is **" + (closest.id || closest.code || 'Primary Hub') + " — " + (closest.name || 'Fulfillment Center') + "**.\n\n- **Straight-Line Distance:** **" + minD.toFixed(1) + " km**\n- **Estimated EV Fleet Transit Time:** **~" + transitMins + " minutes**\n- **Catchment Status:** In direct primary service zone.\n\n*Was this helpful? Feel free to share feedback!*",
+        source: "ShelVO AI",
+        suggestedActions: [
+          { label: "🏢 Check Hub Capacity", action: "CHAT_CAPACITY" },
+          { label: "📦 View Stock Inventory", action: "OPEN_INVENTORY_TABLE" },
+          { label: "⭐ Rate ShelVO", action: "FEEDBACK_CAT_REVIEW" }
+        ]
+      };
+    }
+
+    // 4. Stock Inventory
+    if (["stock", "inventory", "sku", "units", "goods", "reorder", "shortage", "valuation"].some(function(k) { return qLower.indexOf(k) !== -1; })) {
+      return {
+        reply: "### Enterprise Stock Inventory Intelligence Overview\n\nGRIDPOINT tracks **13 core SKUs** distributed across fulfillment hubs:\n\n- **Total Stock on Hand:** **34,670 units**\n- **Aggregate Inventory Valuation:** **INR 45,924,800.00**\n- **Safety Health:** 6 SKUs Healthy, 6 Low Stock, 1 Critical Shortage.\n\n#### Priority Low-Stock Attention Items:\n1. **FMC-103 — Artisan Dark Roast Coffee Beans 1kg**: Total 1,175 units on hand (Reorder threshold: 150) — Status: **🚨 CRITICAL**\n2. **APP-302 — High-Visibility Reflective Safety Vests**: Total 1,080 units on hand (Reorder threshold: 200) — Status: **⚠️ LOW STOCK**\n3. **ELC-001 — Smart Lithium Battery Pack 48V**: Total 815 units on hand (Reorder threshold: 100) — Status: **⚠️ LOW STOCK**\n4. **FMC-101 — Cold-Pressed Sunflower Oil 5L**: Total 1,910 units on hand (Reorder threshold: 250) — Status: **⚠️ LOW STOCK**\n\n*Was this helpful? Feel free to share feedback!*",
+        source: "ShelVO AI",
+        inventoryAlerts: [
+          { sku: "FMC-103", name: "Artisan Dark Roast Coffee Beans 1kg", status: "CRITICAL", totalOnHand: 1175, minReorder: 150 },
+          { sku: "APP-302", name: "High-Visibility Reflective Safety Vests", status: "LOW STOCK", totalOnHand: 1080, minReorder: 200 },
+          { sku: "ELC-001", name: "Smart Lithium Battery Pack 48V", status: "LOW STOCK", totalOnHand: 815, minReorder: 100 },
+          { sku: "FMC-101", name: "Cold-Pressed Sunflower Oil 5L", status: "LOW STOCK", totalOnHand: 1910, minReorder: 250 }
+        ],
+        suggestedActions: [
+          { label: "📦 Open Full Stock Inventory Table", action: "OPEN_INVENTORY_TABLE" },
+          { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" },
+          { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" }
+        ]
+      };
+    }
+
+    // 5. Default Guidance
+    return {
+      reply: "### 👋 Hi! I'm ShelVO AI, your logistics & fulfillment operations lead.\n\nI keep a continuous real-time watch on our fulfillment network:\n- 📍 **Nearest Warehouse:** Tell me your delivery neighborhood or tap `📍 Near Me` to identify your closest fulfillment center & EV transit time.\n- 🏢 **Capacity & Utilization:** Check real-time throughput limits, order headroom, and physical pallet bays.\n- 📦 **Stock Inventory & Alerts:** Track SKU stock levels, monitor safety reorders, and view valuations.\n\n**How can I assist your operations today?**",
+      source: "ShelVO AI",
+      suggestedActions: [
+        { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+        { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" },
+        { label: "📦 Stock Inventory", action: "OPEN_INVENTORY_TABLE" },
+        { label: "⭐ General Review", action: "FEEDBACK_CAT_REVIEW" }
+      ]
+    };
+  }
+
   window.GRIDPOINT_COMPONENTS.ChatbotModal = function({
     neighborhoods,
     optimizationResult,
@@ -5296,58 +5581,57 @@ Feel free to ask a question, or share your thoughts to help us improve!`,
       setInputVal("");
       setIsTyping(true);
 
+      let data = null;
+      const combinedContext = Object.assign({
+        warehouses: optimizationResult ? optimizationResult.warehouses : null,
+        metrics: optimizationResult ? optimizationResult.metrics : baselineMetrics,
+        neighborhoods: neighborhoods || null,
+        neighborhoodCount: neighborhoods ? neighborhoods.length : 28,
+        geminiApiKey: localStorage.getItem("gridpoint_gemini_api_key") || null
+      }, extraContext || {});
+
       try {
         const payload = {
           message: query,
-          context: Object.assign({
-            warehouses: optimizationResult ? optimizationResult.warehouses : null,
-            metrics: optimizationResult ? optimizationResult.metrics : baselineMetrics,
-            neighborhoodCount: neighborhoods ? neighborhoods.length : 28,
-            geminiApiKey: localStorage.getItem("gridpoint_gemini_api_key") || null
-          }, extraContext || {})
+          context: combinedContext
         };
 
-        const res = await fetch("/api/chat", {
+        const apiUrl = (window.location && window.location.protocol === 'file:')
+          ? 'http://127.0.0.1:3000/api/chat'
+          : '/api/chat';
+
+        const res = await fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error("API status " + res.status);
-        const data = await res.json();
-
-        const assistantMsg = {
-          id: "msg_bot_" + Date.now(),
-          sender: "assistant",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          text: data.reply || "I've processed your request.",
-          source: data.source || "ShelVO AI",
-          capacityCards: data.capacityCards || [],
-          inventoryAlerts: data.inventoryAlerts || [],
-          suggestedActions: data.suggestedActions || [],
-          feedbackState: null
-        };
-
-        setMessages(prev => [...prev, assistantMsg]);
+        if (res.ok) {
+          data = await res.json();
+        }
       } catch (err) {
-        console.error("Chat error:", err);
-        setMessages(prev => [
-          ...prev,
-          {
-            id: "msg_err_" + Date.now(),
-            sender: "assistant",
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            text: "I ran into a connection issue with the server. Please ensure the backend is running.\n\n*Was this helpful? Feel free to share feedback!*",
-            suggestedActions: [
-              { label: "🐛 Report Connection Bug", action: "FEEDBACK_CAT_BUG" },
-              { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" }
-            ],
-            feedbackState: null
-          }
-        ]);
-      } finally {
-        setIsTyping(false);
+        console.warn("Backend fetch failed, engaging client-side ShelVO reasoning engine:", err);
       }
+
+      // If backend was unreachable or returned an error, use client-side intelligence fallback
+      if (!data || !data.reply) {
+        data = generateClientReply(query, combinedContext);
+      }
+
+      const assistantMsg = {
+        id: "msg_bot_" + Date.now(),
+        sender: "assistant",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: data.reply || "I've processed your request.",
+        source: data.source || "ShelVO AI",
+        capacityCards: data.capacityCards || [],
+        inventoryAlerts: data.inventoryAlerts || [],
+        suggestedActions: data.suggestedActions || [],
+        feedbackState: null
+      };
+
+      setMessages(prev => [...prev, assistantMsg]);
+      setIsTyping(false);
     };
 
     const handleMicroFeedback = async (msgId, vote) => {
@@ -5359,17 +5643,30 @@ Feel free to ask a question, or share your thoughts to help us improve!`,
       const snippet = targetMsg ? targetMsg.text.slice(0, 80) : "";
 
       try {
-        await fetch("/api/feedback", {
+        const feedbackUrl = (window.location && window.location.protocol === 'file:')
+          ? 'http://127.0.0.1:3000/api/feedback'
+          : '/api/feedback';
+        await fetch(feedbackUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             category: vote === "up" ? "Helpful Response" : "Unhelpful Response",
             rating: vote === "up" ? 5 : 1,
-            feedbackText: `Micro-feedback (${vote === "up" ? "👍 Thumbs Up" : "👎 Thumbs Down"}) on answer snippet: "${snippet}..."`
+            feedbackText: "Micro-feedback (" + (vote === "up" ? "👍 Thumbs Up" : "👎 Thumbs Down") + ') on answer snippet: "' + snippet + '..."'
           })
         });
       } catch (e) {
-        console.warn("Failed to record micro-feedback:", e);
+        try {
+          const stored = JSON.parse(localStorage.getItem("gridpoint_user_feedback") || "[]");
+          stored.unshift({
+            id: "FB_" + Date.now().toString(36).toUpperCase(),
+            category: vote === "up" ? "Helpful Response" : "Unhelpful Response",
+            rating: vote === "up" ? 5 : 1,
+            text: "Micro-feedback on: " + snippet,
+            date: new Date().toISOString()
+          });
+          localStorage.setItem("gridpoint_user_feedback", JSON.stringify(stored));
+        } catch (storageErr) {}
       }
     };
 

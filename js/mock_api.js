@@ -230,6 +230,66 @@
       });
     }
 
+    // 13. Inventory: /api/inventory
+    if (url === '/api/inventory') {
+      return jsonResponse({
+        stats: { totalSkus: 13, totalUnitsOnHand: 34670, totalValuationInr: 45924800, lowStockCount: 6, criticalStockCount: 1 },
+        items: [],
+        lowStockAlerts: [
+          { sku: "FMC-103", name: "Artisan Dark Roast Coffee Beans 1kg", status: "CRITICAL", totalOnHand: 1175, minReorder: 150 },
+          { sku: "APP-302", name: "High-Visibility Reflective Safety Vests", status: "LOW STOCK", totalOnHand: 1080, minReorder: 200 }
+        ]
+      });
+    }
+
+    // 14. Feedback: /api/feedback (POST)
+    if (url === '/api/feedback' && method === 'POST') {
+      const refId = "fb_" + Date.now().toString(36);
+      try {
+        const stored = JSON.parse(localStorage.getItem('gridpoint_user_feedback') || '[]');
+        stored.unshift(Object.assign({ id: refId, createdAt: new Date().toISOString() }, body));
+        localStorage.setItem('gridpoint_user_feedback', JSON.stringify(stored));
+      } catch (e) {}
+      return jsonResponse({ success: true, id: refId });
+    }
+
+    // 15. AI Chat: /api/chat or /api/ai-chat (POST)
+    if ((url === '/api/chat' || url === '/api/ai-chat') && method === 'POST') {
+      const msg = (body.message || "").toLowerCase();
+      let reply = "### ShelVO AI Operations Intelligence\n\nI am keeping continuous real-time telemetry on our Bengaluru fulfillment network. Ask about **warehouse capacity**, **stock inventory**, **nearby hubs**, or tap below to **give feedback**!\n\n*Was this helpful? Feel free to share feedback!*";
+      let capacityCards = [];
+      let inventoryAlerts = [];
+      let actions = [
+        { label: "📍 Nearest Hub", action: "CHAT_ASK_LOCATION" },
+        { label: "🏢 Hub Capacity", action: "CHAT_CAPACITY" },
+        { label: "📦 Stock Inventory", action: "OPEN_INVENTORY_TABLE" },
+        { label: "⭐ General Review", action: "FEEDBACK_CAT_REVIEW" }
+      ];
+
+      if (msg.includes("capacity") || msg.includes("utilization") || msg.includes("load") || msg.includes("headroom")) {
+        reply = "### Warehouse Network Capacity & Throughput Intelligence\n\nOur active fulfillment network consists of **3 primary hubs** serving **28 Bengaluru micro-markets**:\n\n- **Total Network Processing Capacity:** **15,000 orders/day**\n- **Current Assigned Daily Demand:** **12,700 orders/day**\n- **Composite Network Utilization:** **84.7%**\n- **Reserve Headroom:** **+2,300 orders/day**\n\n#### Hub Capacity Breakdown:\n- **WH-01 (Peenya Hub)**: 4,200 / 5,000 orders/day (84% util), 1,950 / 3,200 pallets. Status: **OPTIMAL**.\n- **WH-02 (Whitefield Hub)**: 4,680 / 5,000 orders/day (93% util), 2,210 / 2,700 pallets. Status: **HIGH LOAD**.\n- **WH-03 (Electronic City Hub)**: 3,820 / 5,000 orders/day (76% util), 1,840 / 3,000 pallets. Status: **OPTIMAL**.\n\n*Was this helpful? Feel free to share feedback!*";
+        capacityCards = [
+          { code: "WH-01", name: "North Fulfillment Hub (Peenya)", dailyAssigned: 4200, dailyCapacity: 5000, utilizationPercent: 84, palletCapacity: 3200, palletsUsed: 1950, status: "OPTIMAL", statusColor: "#10B981" },
+          { code: "WH-02", name: "East Tech Corridor Hub (Whitefield)", dailyAssigned: 4680, dailyCapacity: 5000, utilizationPercent: 93, palletCapacity: 2700, palletsUsed: 2210, status: "HIGH LOAD WARNING", statusColor: "#F59E0B" },
+          { code: "WH-03", name: "South Electronic City Hub", dailyAssigned: 3820, dailyCapacity: 5000, utilizationPercent: 76, palletCapacity: 3000, palletsUsed: 1840, status: "OPTIMAL", statusColor: "#10B981" }
+        ];
+      } else if (msg.includes("stock") || msg.includes("inventory") || msg.includes("sku")) {
+        reply = "### Enterprise Stock Inventory Intelligence Overview\n\nGRIDPOINT tracks **13 core SKUs** distributed across fulfillment hubs:\n\n- **Total Stock on Hand:** **34,670 units**\n- **Aggregate Inventory Valuation:** **INR 45,924,800.00**\n- **Safety Health:** 6 SKUs Healthy, 6 Low Stock, 1 Critical Shortage.\n\n*Was this helpful? Feel free to share feedback!*";
+        inventoryAlerts = [
+          { sku: "FMC-103", name: "Artisan Dark Roast Coffee Beans 1kg", status: "CRITICAL", totalOnHand: 1175, minReorder: 150 },
+          { sku: "APP-302", name: "High-Visibility Reflective Safety Vests", status: "LOW STOCK", totalOnHand: 1080, minReorder: 200 }
+        ];
+      }
+
+      return jsonResponse({
+        reply: reply,
+        source: "ShelVO AI",
+        capacityCards: capacityCards,
+        inventoryAlerts: inventoryAlerts,
+        suggestedActions: actions
+      });
+    }
+
     return jsonResponse({ error: 'Endpoint not found in static mode' }, 404);
   };
 })();
