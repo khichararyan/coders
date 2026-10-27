@@ -72,25 +72,60 @@
       return jsonResponse({ status: 'healthy', mode: 'client-autonomous', version: '3.0.0' });
     }
 
+    function formatNameFromEmail(email) {
+      if (!email) return "Operations Lead";
+      const prefix = email.split('@')[0];
+      const parts = prefix.split(/[._-]+/).filter(Boolean);
+      if (parts.length === 0) return "Operations Lead";
+      return parts.map(function(p) { return p.charAt(0).toUpperCase() + p.slice(1); }).join(" ");
+    }
+
     // 2. Authentication: /api/auth/me
     if (url === '/api/auth/me') {
       const token = localStorage.getItem('gridpoint_token');
-      const user = localStorage.getItem('gridpoint_current_user');
-      if (token && user) {
-        return jsonResponse({ user: JSON.parse(user) });
+      const userStr = localStorage.getItem('gridpoint_current_user');
+      if (token && userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          // If a user got stuck with the static mock name "Elena Rostova", fix it immediately:
+          if (user.fullName === 'Elena Rostova' && user.email && user.email.indexOf('gridpoint.ai') === -1) {
+            const usersDb = JSON.parse(localStorage.getItem('gridpoint_users_db') || '{}');
+            const saved = usersDb[user.email.toLowerCase()];
+            user.fullName = (saved && saved.fullName) ? saved.fullName : formatNameFromEmail(user.email);
+            localStorage.setItem('gridpoint_current_user', JSON.stringify(user));
+          }
+          return jsonResponse({ user: user });
+        } catch (e) {}
       }
       return jsonResponse({ error: 'Unauthenticated' }, 401);
     }
 
     // 3. Authentication: /api/auth/login
     if (url === '/api/auth/login' && method === 'POST') {
-      const { email, password } = body;
-      const user = {
-        id: 'usr_admin',
-        email: email || 'admin@gridpoint.ai',
-        fullName: 'Elena Rostova',
-        organization: 'Apex Global Supply'
-      };
+      const email = (body.email || '').trim();
+      const usersDb = JSON.parse(localStorage.getItem('gridpoint_users_db') || '{}');
+      const existingUser = usersDb[email.toLowerCase()];
+
+      let user;
+      if (existingUser) {
+        user = {
+          id: existingUser.id,
+          email: existingUser.email,
+          fullName: existingUser.fullName,
+          organization: existingUser.organization
+        };
+      } else {
+        const derivedName = formatNameFromEmail(email);
+        user = {
+          id: 'usr_' + Date.now().toString(36),
+          email: email || 'user@gridpoint.ai',
+          fullName: derivedName,
+          organization: 'Logistics Operations'
+        };
+        usersDb[email.toLowerCase()] = Object.assign({}, user, { password: body.password });
+        localStorage.setItem('gridpoint_users_db', JSON.stringify(usersDb));
+      }
+
       const token = 'token_mock_' + Date.now();
       localStorage.setItem('gridpoint_token', token);
       localStorage.setItem('gridpoint_current_user', JSON.stringify(user));
@@ -99,16 +134,42 @@
 
     // 4. Authentication: /api/auth/signup
     if (url === '/api/auth/signup' && method === 'POST') {
+      const email = (body.email || '').trim();
+      const fullName = (body.fullName || '').trim() || formatNameFromEmail(email);
+      const organization = (body.organization || '').trim() || 'Logistics Operations';
       const user = {
-        id: 'usr_' + Date.now(),
-        email: body.email,
-        fullName: body.fullName || 'Enterprise Analyst',
-        organization: body.organization || 'Logistics Operations'
+        id: 'usr_' + Date.now().toString(36),
+        email: email,
+        fullName: fullName,
+        organization: organization
       };
+      const usersDb = JSON.parse(localStorage.getItem('gridpoint_users_db') || '{}');
+      usersDb[email.toLowerCase()] = Object.assign({}, user, { password: body.password });
+      localStorage.setItem('gridpoint_users_db', JSON.stringify(usersDb));
+
       const token = 'token_mock_' + Date.now();
       localStorage.setItem('gridpoint_token', token);
       localStorage.setItem('gridpoint_current_user', JSON.stringify(user));
-      return jsonResponse({ token, user });
+      return jsonResponse({ token, user }, 201);
+    }
+
+    // 5. Authentication: /api/auth/profile (PUT)
+    if (url === '/api/auth/profile' && method === 'PUT') {
+      const currentUser = JSON.parse(localStorage.getItem('gridpoint_current_user') || '{}');
+      const updatedUser = Object.assign({}, currentUser, {
+        fullName: body.fullName || currentUser.fullName,
+        organization: body.organization || currentUser.organization
+      });
+      localStorage.setItem('gridpoint_current_user', JSON.stringify(updatedUser));
+
+      if (updatedUser.email) {
+        const usersDb = JSON.parse(localStorage.getItem('gridpoint_users_db') || '{}');
+        if (usersDb[updatedUser.email.toLowerCase()]) {
+          usersDb[updatedUser.email.toLowerCase()] = Object.assign(usersDb[updatedUser.email.toLowerCase()], updatedUser);
+          localStorage.setItem('gridpoint_users_db', JSON.stringify(usersDb));
+        }
+      }
+      return jsonResponse({ user: updatedUser });
     }
 
     // 5. Authentication: /api/auth/logout

@@ -506,7 +506,7 @@ window.GRIDPOINT_COMPONENTS.SignupPage = function ({
     required: true,
     value: fullName,
     onChange: e => setFullName(e.target.value),
-    placeholder: "Elena Rostova",
+    placeholder: "Your Full Name",
     className: "w-full bg-[#11141B] border border-white/15 focus:border-[#D4A373] px-3.5 py-2 text-sm text-white font-mono placeholder:text-white/20 outline-none transition-all"
   })), /*#__PURE__*/React.createElement("div", {
     className: "space-y-1.5"
