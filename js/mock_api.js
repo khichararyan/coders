@@ -317,6 +317,136 @@
     // 15. AI Chat: /api/chat or /api/ai-chat (POST)
     if ((url === '/api/chat' || url === '/api/ai-chat') && method === 'POST') {
       const msg = (body.message || "").toLowerCase();
+      const context = body.context || {};
+      const warehouses = context.warehouses && context.warehouses.length > 0 ? context.warehouses : [
+        { id: "WH-01", code: "WH-01", name: "North Fulfillment Hub (Peenya / Yeshwanthpur)", latitude: 13.0329, longitude: 77.5273, dailyAssigned: 4200, dailyCapacity: 5000, palletCapacity: 3200, palletsUsed: 1950, status: "OPTIMAL CAPACITY", statusColor: "#10B981" },
+        { id: "WH-02", code: "WH-02", name: "East Tech Corridor Hub (Whitefield / Mahadevapura)", latitude: 12.9698, longitude: 77.7499, dailyAssigned: 4680, dailyCapacity: 5000, palletCapacity: 2700, palletsUsed: 2210, status: "HIGH LOAD WARNING", statusColor: "#F59E0B" },
+        { id: "WH-03", code: "WH-03", name: "South Electronic City Hub (Bommanahalli / EC)", latitude: 12.8452, longitude: 77.6602, dailyAssigned: 3820, dailyCapacity: 5000, palletCapacity: 3000, palletsUsed: 1840, status: "OPTIMAL CAPACITY", statusColor: "#10B981" }
+      ];
+
+      const areas = {
+        "koramangala": [12.9352, 77.6245],
+        "indiranagar": [12.9719, 77.6412],
+        "hsr layout": [12.9116, 77.6741],
+        "whitefield": [12.9698, 77.7499],
+        "electronic city": [12.8452, 77.6602],
+        "jayanagar": [12.9308, 77.5838],
+        "malleshwaram": [13.0031, 77.5643],
+        "bellandur": [12.9260, 77.6762],
+        "marathahalli": [12.9591, 77.6974],
+        "hebbal": [13.0358, 77.5970],
+        "rajajinagar": [12.9915, 77.5524],
+        "banashankari": [12.9255, 77.5468],
+        "btm layout": [12.9166, 77.6101],
+        "yelahanka": [13.1007, 77.5963],
+        "sarjapur road": [12.9081, 77.6953],
+        "jp nagar": [12.9063, 77.5857],
+        "peenya": [13.0329, 77.5273],
+        "mahadevapura": [12.9866, 77.6961]
+      };
+
+      function haversine(lat1, lon1, lat2, lon2) {
+        const toRad = function(x) { return (x * Math.PI) / 180; };
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 6371 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      }
+
+      // Check for Proximity / Nearest warehouse intent
+      const isNearbyIntent = ["nearby", "near me", "closest", "nearest", "around me", "my location", "find warehouse", "locate", "where is", "distance", "around us", "address"].some(function(k) { return msg.indexOf(k) !== -1; }) || Object.keys(areas).some(function(a) { return msg.indexOf(a) !== -1; });
+
+      if (isNearbyIntent) {
+        let userCoords = null;
+        let locName = null;
+
+        if (context.userLocation && context.userLocation.latitude) {
+          userCoords = [parseFloat(context.userLocation.latitude), parseFloat(context.userLocation.longitude)];
+          locName = context.userLocation.area || "Your Device GPS Location";
+        }
+
+        if (!userCoords) {
+          const m = (body.message || "").match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+          if (m) {
+            userCoords = [parseFloat(m[1]), parseFloat(m[2])];
+            locName = "Coordinates (" + userCoords[0].toFixed(4) + ", " + userCoords[1].toFixed(4) + ")";
+          }
+        }
+
+        if (!userCoords) {
+          const areaKeys = Object.keys(areas);
+          for (let i = 0; i < areaKeys.length; i++) {
+            const a = areaKeys[i];
+            if (msg.indexOf(a) !== -1) {
+              userCoords = areas[a];
+              locName = a.charAt(0).toUpperCase() + a.slice(1);
+              break;
+            }
+          }
+        }
+
+        if (!userCoords) {
+          return jsonResponse({
+            reply: "### 📍 Locate Your Nearest Fulfillment Warehouse\n\nTo identify the closest fulfillment center and estimate EV delivery transit times, tell me your delivery neighborhood in Bengaluru or click **`📍 Share GPS Location`** below:\n\nSelect a popular area or share your location below:",
+            source: "ShelVO AI",
+            capacityCards: [],
+            inventoryAlerts: [],
+            suggestedActions: [
+              { label: "📍 Share GPS Location", action: "REQUEST_GEOLOCATION" },
+              { label: "📍 Koramangala", action: "CHAT_LOCATION_Koramangala" },
+              { label: "📍 Whitefield", action: "CHAT_LOCATION_Whitefield" },
+              { label: "📍 Indiranagar", action: "CHAT_LOCATION_Indiranagar" },
+              { label: "📍 Electronic City", action: "CHAT_LOCATION_Electronic City" },
+              { label: "📍 HSR Layout", action: "CHAT_LOCATION_HSR Layout" }
+            ]
+          });
+        }
+
+        // Calculate distances to all warehouses
+        const distances = [];
+        warehouses.forEach(function(w) {
+          const d = haversine(userCoords[0], userCoords[1], w.latitude, w.longitude);
+          const mins = Math.max(8, Math.round(d * 2.3 + 5));
+          distances.push({ warehouse: w, distanceKm: parseFloat(d.toFixed(2)), transitMinutes: mins });
+        });
+
+        distances.sort(function(a, b) { return a.distanceKm - b.distanceKm; });
+        const closest = distances[0];
+        const cw = closest.warehouse;
+
+        const tableRows = distances.map(function(item) {
+          const w = item.warehouse;
+          const isBest = (w.id === cw.id || w.code === cw.code) ? " ⭐ **(Closest)**" : "";
+          return "| **" + (w.id || w.code) + "** (" + (w.name || "Hub") + ")" + isBest + " | **" + item.distanceKm + " km** | ~" + item.transitMinutes + " mins | " + (w.utilizationPercent || 80) + "% | " + (w.status || "OPTIMAL") + " |";
+        }).join("\n");
+
+        const replyText = "### 📍 Nearest Warehouse Location Analysis\n**Target Location:** " + locName + " (`" + userCoords[0].toFixed(4) + ", " + userCoords[1].toFixed(4) + "`)\n\nThe closest fulfillment center to you is **" + (cw.id || cw.code) + " — " + cw.name + "**, located **" + closest.distanceKm + " km** away with an estimated delivery transit time of **~" + closest.transitMinutes + " minutes**.\n\n#### 🏢 Primary Fulfillment Hub Profile:\n- **Hub Code & Name:** `" + (cw.id || cw.code) + "` — " + cw.name + "\n- **Proximity:** **" + closest.distanceKm + " km** (Est. Transit: **~" + closest.transitMinutes + " minutes** via EV fleet)\n- **Daily Capacity:** " + (cw.dailyAssigned || 4200).toLocaleString() + " / " + (cw.dailyCapacity || 5000).toLocaleString() + " orders/day\n- **Pallet Storage:** " + (cw.palletsUsed || 1950).toLocaleString() + " / " + (cw.palletCapacity || 3000).toLocaleString() + " pallet bays\n- **Active EV Fleet:** 16 Delivery Vans | Dock Doors: 8 Inbound / 10 Outbound\n\n#### 🗺️ Network Distance & ETA Comparison:\n| Hub | Distance | Est. EV Transit | Utilization | Status |\n| :--- | :---: | :---: | :---: | :---: |\n" + tableRows + "\n\n> [!TIP]\n> Dispatching orders from **" + (cw.id || cw.code) + "** ensures the lowest last-mile delivery cost and lowest carbon footprint.\n\n*Was this helpful? Feel free to share feedback!*";
+
+        return jsonResponse({
+          reply: replyText,
+          source: "ShelVO AI",
+          capacityCards: [
+            {
+              code: cw.id || cw.code,
+              name: cw.name,
+              dailyAssigned: cw.dailyAssigned || 4200,
+              dailyCapacity: cw.dailyCapacity || 5000,
+              utilizationPercent: Math.round(((cw.dailyAssigned || 4200) / (cw.dailyCapacity || 5000)) * 100),
+              palletCapacity: cw.palletCapacity || 3000,
+              palletsUsed: cw.palletsUsed || 1950,
+              status: cw.status || "OPTIMAL CAPACITY",
+              statusColor: cw.statusColor || "#10B981"
+            }
+          ],
+          inventoryAlerts: [],
+          suggestedActions: [
+            { label: "🏢 Check Hub Capacity", action: "CHAT_CAPACITY" },
+            { label: "📦 View Stock Inventory", action: "OPEN_INVENTORY_TABLE" },
+            { label: "⭐ Rate ShelVO", action: "FEEDBACK_CAT_REVIEW" }
+          ]
+        });
+      }
+
       let reply = "### ShelVO AI Operations Intelligence\n\nI am keeping continuous real-time telemetry on our Bengaluru fulfillment network. Ask about **warehouse capacity**, **stock inventory**, **nearby hubs**, or tap below to **give feedback**!\n\n*Was this helpful? Feel free to share feedback!*";
       let capacityCards = [];
       let inventoryAlerts = [];
