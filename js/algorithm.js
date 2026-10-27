@@ -568,31 +568,53 @@ window.GRIDPOINT_ALGO = (function() {
    */
   function generateScenarios(neighborhoods, baselineWh) {
     const scenarios = [];
-    const baseKList = [2, 3, 4, 5];
+    const baseKList = [1, 2, 3, 4, 5];
+    const defaultBaseline = window.GRIDPOINT_DATA &&
+      window.GRIDPOINT_DATA.LEGACY_BASELINE &&
+      window.GRIDPOINT_DATA.LEGACY_BASELINE.warehouse;
+    const baselineWarehouse = baselineWh && typeof baselineWh === 'object'
+      ? baselineWh
+      : defaultBaseline;
+    const baseline = evaluateBaseline(neighborhoods, baselineWarehouse);
 
     baseKList.forEach(k => {
       const opt = optimizeLocations(neighborhoods, { k });
-      const baseline = evaluateBaseline(neighborhoods, baselineWh);
-      const costDiff = baseline.totalCombinedCostInr - opt.metrics.totalCombinedCostInr;
-      const costDiffPct = ((costDiff / baseline.totalCombinedCostInr) * 100).toFixed(1);
-      const distDiff = baseline.totalDeliveryDistanceKm - opt.metrics.totalDeliveryDistanceKm;
-      const distDiffPct = ((distDiff / baseline.totalDeliveryDistanceKm) * 100).toFixed(1);
-
       scenarios.push({
         id: `SCENARIO_${k}WH`,
         name: `${k} Facility Strategic Network`,
         k,
+        solution: opt,
+        deliveryCostInr: opt.metrics.totalDeliveryCostInr,
+        infrastructureCostInr: opt.metrics.totalFixedInfraCostInr,
+        totalCostInr: opt.metrics.totalCombinedCostInr,
+        averageDistanceKm: opt.metrics.averageDeliveryDistanceKm,
+        costPerOrderInr: opt.metrics.totalDailyOrders > 0
+          ? parseFloat((opt.metrics.totalCombinedCostInr / opt.metrics.totalDailyOrders).toFixed(2))
+          : 0,
         warehouses: opt.warehouses,
         metrics: opt.metrics,
-        savingsInr: costDiff,
-        savingsPercent: parseFloat(costDiffPct),
-        distanceReductionPercent: parseFloat(distDiffPct),
+        savingsInr: baseline ? baseline.totalCombinedCostInr - opt.metrics.totalCombinedCostInr : 0,
+        savingsPercent: baseline && baseline.totalCombinedCostInr > 0
+          ? parseFloat((((baseline.totalCombinedCostInr - opt.metrics.totalCombinedCostInr) / baseline.totalCombinedCostInr) * 100).toFixed(1))
+          : 0,
+        distanceReductionPercent: baseline && baseline.totalDeliveryDistanceKm > 0
+          ? parseFloat((((baseline.totalDeliveryDistanceKm - opt.metrics.totalDeliveryDistanceKm) / baseline.totalDeliveryDistanceKm) * 100).toFixed(1))
+          : 0,
         sla15ReachPercent: opt.metrics.sla15ReachPercent,
         roiMonths: parseFloat((k * 12.5).toFixed(1))
       });
     });
 
-    return scenarios;
+    const sweetSpotIndex = scenarios.reduce(
+      (bestIndex, scenario, index) =>
+        scenario.totalCostInr < scenarios[bestIndex].totalCostInr ? index : bestIndex,
+      0
+    );
+    const sweetSpotK = scenarios[sweetSpotIndex].k;
+    scenarios.scenarios = scenarios;
+    scenarios.sweetSpotK = sweetSpotK;
+
+    return { scenarios, sweetSpotK, length: scenarios.length };
   }
 
   /**

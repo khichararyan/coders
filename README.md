@@ -51,7 +51,8 @@ GRIDPOINT is an enterprise-grade logistics intelligence web platform built for h
 gridpoint/
 ├── server.py                        # Python HTTP & REST API server
 ├── index.html                       # Application shell & typography
-├── start.bat                        # Double-click launch script
+├── start.bat                        # Windows launch script
+├── start.sh                         # macOS / Linux launch script
 ├── sample_demand_bengaluru.csv       # Sample CSV dataset for drag-and-drop testing
 ├── css/
 │   └── styles.css                   # Swiss dark slate palette, radar pulse, glassmorphism
@@ -78,12 +79,19 @@ gridpoint/
 
 ## Quickstart
 
-### Method 1: Using start.bat
-Double-click `start.bat` in the `gridpoint` folder.
-
-### Method 2: Command Line
+### macOS / Linux
 ```bash
-cd "c:\Users\Ansh Gupta\Documents\gridpoint"
-python server.py
+./start.sh
 ```
-Open **[http://localhost:3000](http://localhost:3000)** in any modern web browser.
+
+### Windows
+Double-click `start.bat`, or run `python server.py` from this folder.
+
+### Choose a port
+The server listens on port `3000` by default. To use another port, set `PORT` before launching:
+
+```bash
+PORT=8080 ./start.sh
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** in a modern web browser (replace `3000` if you chose a different port). The browser needs internet access to load the app's CDN-hosted React, Leaflet, and Tailwind assets.

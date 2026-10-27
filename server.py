@@ -16,7 +16,7 @@ import urllib.request
 import re
 import db
 
-PORT = 3000
+PORT = int(os.environ.get("PORT", "3000"))
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 EARTH_RADIUS_KM = 6371.0
 
@@ -1452,8 +1452,8 @@ class GridpointHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({"error": str(e)}, status=400)
             return
 
-        # POST /api/chat (Intelligent AI Logistics Copilot)
-        if path == "/api/chat":
+        # POST /api/chat or /api/ai-chat (Intelligent AI Logistics Copilot)
+        if path in ("/api/chat", "/api/ai-chat"):
             try:
                 data = self.read_json_body()
                 message = data.get("message", "").strip()
